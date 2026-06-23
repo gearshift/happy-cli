@@ -182,6 +182,15 @@ export async function runCodex(opts: {
             logger.debug(`[Codex] User message received with no model override, using current: ${currentModel || 'default'}`);
         }
 
+        // Resolve custom provider - set env vars for custom API endpoint
+        if (message.meta?.provider) {
+            const { baseUrl, apiKey } = message.meta.provider;
+            logger.debug(`[Codex] Custom provider detected, setting OPENAI_BASE_URL and OPENAI_API_KEY`);
+            process.env.OPENAI_BASE_URL = baseUrl;
+            process.env.OPENAI_API_KEY = apiKey;
+            logger.debug(`[Codex] OPENAI_BASE_URL set to: ${baseUrl}`);
+        }
+
         const enhancedMode: EnhancedMode = {
             permissionMode: messagePermissionMode || 'default',
             model: messageModel,

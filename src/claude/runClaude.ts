@@ -289,6 +289,15 @@ export async function runClaude(credentials: Credentials, options: StartOptions 
             logger.debug(`[loop] User message received with no fallback model override, using current: ${currentFallbackModel || 'none'}`);
         }
 
+        // Resolve custom provider - set env vars for custom API endpoint
+        if (message.meta?.provider) {
+            const { baseUrl, apiKey } = message.meta.provider;
+            logger.debug(`[loop] Custom provider detected, setting ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY`);
+            process.env.ANTHROPIC_BASE_URL = baseUrl;
+            process.env.ANTHROPIC_API_KEY = apiKey;
+            logger.debug(`[loop] ANTHROPIC_BASE_URL set to: ${baseUrl}`);
+        }
+
         // Resolve append system prompt - use message.meta.appendSystemPrompt if provided, otherwise use current
         let messageAppendSystemPrompt = currentAppendSystemPrompt;
         if (message.meta?.hasOwnProperty('appendSystemPrompt')) {
