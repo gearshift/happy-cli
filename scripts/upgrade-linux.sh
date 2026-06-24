@@ -42,26 +42,36 @@ check_node_version() {
   fi
 }
 
-remove_generated_npm_lockfile() {
-  local lockfile="$INSTALL_DIR/package-lock.json"
+remove_untracked_file() {
+  local relative_path="$1"
+  local description="$2"
+  local path="$INSTALL_DIR/$relative_path"
 
-  if [ ! -f "$lockfile" ]; then
+  if [ ! -e "$path" ]; then
     return
   fi
 
-  if git -C "$INSTALL_DIR" ls-files --error-unmatch package-lock.json >/dev/null 2>&1; then
-    fail "$INSTALL_DIR/package-lock.json is tracked by git. Commit/stash local changes before upgrading."
+  if git -C "$INSTALL_DIR" ls-files --error-unmatch "$relative_path" >/dev/null 2>&1; then
+    return
   fi
 
-  log "Removing generated npm lockfile at $lockfile"
-  rm -f "$lockfile"
+  log "Removing untracked $description at $path"
+  rm -f "$path"
+}
+
+remove_generated_files() {
+  remove_untracked_file "package-lock.json" "npm lockfile"
+  remove_untracked_file "upgrade-happy-cli.sh" "downloaded upgrade script"
 }
 
 ensure_repo() {
   if [ -d "$INSTALL_DIR/.git" ]; then
     log "Updating existing checkout at $INSTALL_DIR"
-    remove_generated_npm_lockfile
-    git -C "$INSTALL_DIR" diff --quiet || fail "$INSTALL_DIR has uncommitted changes. Commit/stash them or set HAPPY_CLI_DIR to a clean checkout."
+    remove_generated_files
+    dirty="$(git -C "$INSTALL_DIR" status --porcelain)"
+    [ -z "$dirty" ] || fail "$INSTALL_DIR has uncommitted changes:
+$dirty
+Commit/stash them or set HAPPY_CLI_DIR to a clean checkout."
     git -C "$INSTALL_DIR" fetch origin "$REF"
     git -C "$INSTALL_DIR" checkout "$REF"
     git -C "$INSTALL_DIR" pull --ff-only origin "$REF"

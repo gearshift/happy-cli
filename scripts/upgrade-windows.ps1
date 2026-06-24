@@ -65,28 +65,38 @@ function Assert-NodeVersion {
     }
 }
 
-function Remove-GeneratedNpmLockfile {
-    $lockfile = Join-Path $InstallDir "package-lock.json"
-    if (-not (Test-Path $lockfile)) {
+function Remove-UntrackedFile {
+    param(
+        [string]$RelativePath,
+        [string]$Description
+    )
+
+    $path = Join-Path $InstallDir $RelativePath
+    if (-not (Test-Path $path)) {
         return
     }
 
-    & git -C $InstallDir ls-files --error-unmatch package-lock.json *> $null
+    & git -C $InstallDir ls-files --error-unmatch $RelativePath *> $null
     if ($LASTEXITCODE -eq 0) {
-        throw "$lockfile is tracked by git. Commit/stash local changes before upgrading."
+        return
     }
 
-    Write-Step "Removing generated npm lockfile at $lockfile"
-    Remove-Item -Force $lockfile
+    Write-Step "Removing untracked $Description at $path"
+    Remove-Item -Force $path
+}
+
+function Remove-GeneratedFiles {
+    Remove-UntrackedFile -RelativePath "package-lock.json" -Description "npm lockfile"
+    Remove-UntrackedFile -RelativePath "upgrade-happy-cli.ps1" -Description "downloaded upgrade script"
 }
 
 function Update-Repo {
     if (Test-Path (Join-Path $InstallDir ".git")) {
         Write-Step "Updating existing checkout at $InstallDir"
-        Remove-GeneratedNpmLockfile
+        Remove-GeneratedFiles
         $dirty = & git -C $InstallDir status --porcelain
         if ($dirty) {
-            throw "$InstallDir has uncommitted changes. Commit/stash them or set HAPPY_CLI_DIR to a clean checkout."
+            throw "$InstallDir has uncommitted changes:`n$dirty`nCommit/stash them or set HAPPY_CLI_DIR to a clean checkout."
         }
         & git -C $InstallDir fetch origin $Ref
         & git -C $InstallDir checkout $Ref
