@@ -113,7 +113,7 @@ export class PermissionHandler {
     /**
      * Creates the canCallTool callback for the SDK
      */
-    handleToolCall = async (toolName: string, input: unknown, mode: EnhancedMode, options: { signal: AbortSignal }): Promise<PermissionResult> => {
+    handleToolCall = async (toolName: string, input: unknown, mode: EnhancedMode, options: { signal: AbortSignal; toolUseID?: string }): Promise<PermissionResult> => {
 
         // Check if tool is explicitly allowed
         if (toolName === 'Bash') {
@@ -153,6 +153,18 @@ export class PermissionHandler {
         // Approval flow
         //
 
+        const toolCallId = options.toolUseID ?? await this.resolveToolCallIdAfterMessage(toolName, input);
+        return this.handlePermissionRequest(toolCallId, toolName, input, options.signal);
+    }
+
+    /**
+     * Resolve a permission request to the corresponding assistant tool-use id.
+     *
+     * Newer Claude Code permission requests include the tool-use id directly;
+     * this fallback preserves compatibility with older permission-control
+     * messages that only provided tool name and input.
+     */
+    private async resolveToolCallIdAfterMessage(toolName: string, input: unknown): Promise<string> {
         let toolCallId = this.resolveToolCallId(toolName, input);
         if (!toolCallId) { // What if we got permission before tool call
             await delay(1000);
@@ -161,7 +173,8 @@ export class PermissionHandler {
                 throw new Error(`Could not resolve tool call ID for ${toolName}`);
             }
         }
-        return this.handlePermissionRequest(toolCallId, toolName, input, options.signal);
+
+        return toolCallId;
     }
 
     /**

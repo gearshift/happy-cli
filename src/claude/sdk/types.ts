@@ -104,12 +104,20 @@ export interface CanUseToolRequest extends ControlRequest {
     subtype: 'can_use_tool'
     tool_name: string
     input: unknown
+    /** Claude Code tool-use id associated with the permission request. */
+    tool_use_id?: string
+    /** Compatibility with SDKs that expose the id in camelCase. */
+    toolUseID?: string
 }
 
 export interface CanUseToolControlRequest {
     type: 'control_request'
     request_id: string
     request: CanUseToolRequest
+    /** Compatibility with protocol variants that put the tool id at the top level. */
+    tool_use_id?: string
+    /** Compatibility with SDKs that expose the id in camelCase. */
+    toolUseID?: string
 }
 
 export interface CanUseToolControlResponse {
@@ -148,7 +156,7 @@ export type PermissionResult = {
  * Callback function for tool permission checks
  */
 export interface CanCallToolCallback {
-    (toolName: string, input: unknown, options: { signal: AbortSignal }): Promise<PermissionResult>
+    (toolName: string, input: unknown, options: { signal: AbortSignal; toolUseID?: string }): Promise<PermissionResult>
 }
 
 /**

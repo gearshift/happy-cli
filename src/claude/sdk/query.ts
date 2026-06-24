@@ -228,8 +228,14 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
             if (!this.canCallTool) {
                 throw new Error('canCallTool callback is not provided.')
             }
+            const toolUseID = request.request.toolUseID
+                ?? request.request.tool_use_id
+                ?? request.toolUseID
+                ?? request.tool_use_id
+
             return this.canCallTool(request.request.tool_name, request.request.input, {
-                signal
+                signal,
+                toolUseID
             })
         }
         
