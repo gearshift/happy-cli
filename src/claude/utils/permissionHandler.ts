@@ -22,6 +22,7 @@ interface PermissionResponse {
     reason?: string;
     mode?: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
     allowTools?: string[];
+    updatedInput?: Record<string, unknown>;
     receivedAt?: number;
 }
 
@@ -102,8 +103,12 @@ export class PermissionHandler {
             }
         } else {
             // Handle default case for all other tools
+            const originalInput = (pending.input as Record<string, unknown>) || {};
+            const updatedInput = response.updatedInput
+                ? { ...originalInput, ...response.updatedInput }
+                : originalInput;
             const result: PermissionResult = response.approved
-                ? { behavior: 'allow', updatedInput: (pending.input as Record<string, unknown>) || {} }
+                ? { behavior: 'allow', updatedInput }
                 : { behavior: 'deny', message: response.reason || `The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.` };
 
             pending.resolve(result);
@@ -114,6 +119,15 @@ export class PermissionHandler {
      * Creates the canCallTool callback for the SDK
      */
     handleToolCall = async (toolName: string, input: unknown, mode: EnhancedMode, options: { signal: AbortSignal; toolUseID?: string }): Promise<PermissionResult> => {
+
+        // AskUserQuestion requires user interaction — never auto-approve it, even
+        // in bypassPermissions/yolo mode. Otherwise Claude receives the original
+        // unanswered tool input and the app later shows completed selections as
+        // "-", which is aggressively unhelpful.
+        if (toolName === 'AskUserQuestion') {
+            const toolCallId = options.toolUseID ?? await this.resolveToolCallIdAfterMessage(toolName, input);
+            return this.handlePermissionRequest(toolCallId, toolName, input, options.signal);
+        }
 
         // Check if tool is explicitly allowed
         if (toolName === 'Bash') {

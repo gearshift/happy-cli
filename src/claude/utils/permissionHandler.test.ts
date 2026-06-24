@@ -14,6 +14,7 @@ interface PermissionResponse {
     reason?: string;
     mode?: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
     allowTools?: string[];
+    updatedInput?: Record<string, unknown>;
 }
 
 function createFakeSession() {
@@ -83,6 +84,54 @@ describe('PermissionHandler', () => {
         await expect(resultPromise).resolves.toEqual({
             behavior: 'allow',
             updatedInput: { command: 'ls -la /tmp', description: 'List temp directory' }
+        } satisfies PermissionResult);
+    });
+
+    it('keeps AskUserQuestion interactive in bypassPermissions mode', async () => {
+        const { session, getState, respondToPermission } = createFakeSession();
+        const handler = new PermissionHandler(session);
+        const abortController = new AbortController();
+
+        const input = {
+            questions: [{
+                question: 'What should we review?',
+                header: 'Review scope',
+                multiSelect: true,
+                options: [
+                    { label: 'Code quality', description: 'Review maintainability' },
+                    { label: 'Security', description: 'Review vulnerabilities' }
+                ]
+            }]
+        };
+
+        const resultPromise = handler.handleToolCall(
+            'AskUserQuestion',
+            input,
+            { permissionMode: 'bypassPermissions' },
+            { signal: abortController.signal, toolUseID: 'toolu_question' }
+        );
+
+        expect(getState().requests).toHaveProperty('toolu_question');
+        expect(getState().requests.toolu_question.tool).toBe('AskUserQuestion');
+
+        await respondToPermission({
+            id: 'toolu_question',
+            approved: true,
+            updatedInput: {
+                answers: {
+                    'What should we review?': 'Code quality, Security'
+                }
+            }
+        });
+
+        await expect(resultPromise).resolves.toEqual({
+            behavior: 'allow',
+            updatedInput: {
+                ...input,
+                answers: {
+                    'What should we review?': 'Code quality, Security'
+                }
+            }
         } satisfies PermissionResult);
     });
 });
