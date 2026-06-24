@@ -51,7 +51,7 @@ remove_untracked_file() {
     return
   fi
 
-  if git -C "$INSTALL_DIR" ls-files --error-unmatch "$relative_path" >/dev/null 2>&1; then
+  if git -C "$INSTALL_DIR" ls-files -- "$relative_path" | grep -q .; then
     return
   fi
 

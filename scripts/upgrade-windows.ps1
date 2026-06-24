@@ -76,8 +76,8 @@ function Remove-UntrackedFile {
         return
     }
 
-    & git -C $InstallDir ls-files --error-unmatch $RelativePath *> $null
-    if ($LASTEXITCODE -eq 0) {
+    $trackedPath = & git -C $InstallDir ls-files -- $RelativePath
+    if ($trackedPath) {
         return
     }
 
