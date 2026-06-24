@@ -335,7 +335,7 @@ export async function claudeRemoteLauncher(session: Session): Promise<'switch' |
                     isAborted: (toolCallId: string) => {
                         return permissionHandler.isAborted(toolCallId);
                     },
-                    nextMessage: async () => {
+                    nextMessage: async (abortSignal?: AbortSignal) => {
                         if (pending) {
                             let p = pending;
                             pending = null;
@@ -343,7 +343,7 @@ export async function claudeRemoteLauncher(session: Session): Promise<'switch' |
                             return p;
                         }
 
-                        let msg = await session.queue.waitForMessagesAndGetAsString(controller.signal);
+                        let msg = await session.queue.waitForMessagesAndGetAsString(abortSignal ?? controller.signal);
 
                         // Check if mode has changed
                         if (msg) {

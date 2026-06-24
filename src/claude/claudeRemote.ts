@@ -30,7 +30,7 @@ export async function claudeRemote(opts: {
     jsRuntime?: JsRuntime,
 
     // Dynamic parameters
-    nextMessage: () => Promise<{ message: string, mode: EnhancedMode } | null>,
+    nextMessage: (abortSignal?: AbortSignal) => Promise<{ message: string, mode: EnhancedMode } | null>,
     onReady: () => void,
     isAborted: (toolCallId: string) => boolean,
 
@@ -155,6 +155,43 @@ export async function claudeRemote(opts: {
         },
     });
 
+    let nextMessageInFlight = false;
+    let nextMessageError: Error | null = null;
+    const nextMessageAbortController = new AbortController();
+    const abortNextMessage = () => nextMessageAbortController.abort();
+    opts.signal?.addEventListener('abort', abortNextMessage, { once: true });
+
+    const requestNextMessage = (): boolean => {
+        if (nextMessageInFlight) {
+            return false;
+        }
+
+        nextMessageInFlight = true;
+        void (async () => {
+            const next = await opts.nextMessage(nextMessageAbortController.signal);
+            nextMessageInFlight = false;
+
+            if (nextMessageAbortController.signal.aborted) {
+                return;
+            }
+
+            if (!next) {
+                messages.end();
+                return;
+            }
+
+            mode = next.mode;
+            messages.push({ type: 'user', message: { role: 'user', content: next.message } });
+        })().catch((error) => {
+            nextMessageInFlight = false;
+            nextMessageError = error instanceof Error ? error : new Error(String(error));
+            logger.debug('[claudeRemote] nextMessage failed', nextMessageError);
+            messages.end();
+        });
+
+        return true;
+    };
+
     // Start the loop
     const response = query({
         prompt: messages,
@@ -192,7 +229,7 @@ export async function claudeRemote(opts: {
             // Handle result messages
             if (message.type === 'result') {
                 updateThinking(false);
-                logger.debug('[claudeRemote] Result received, exiting claudeRemote');
+                logger.debug('[claudeRemote] Result received, marking session ready');
 
                 // Send completion messages
                 if (isCompactCommand) {
@@ -203,17 +240,13 @@ export async function claudeRemote(opts: {
                     isCompactCommand = false;
                 }
 
-                // Send ready event
-                opts.onReady();
-
-                // Push next message
-                const next = await opts.nextMessage();
-                if (!next) {
-                    messages.end();
-                    return;
+                // Send ready event and start waiting for the next user message without
+                // blocking the response iterator. Claude Code can still emit follow-up
+                // messages after a result when background tasks finish; awaiting here
+                // would leave those messages buffered until the user typed again.
+                if (requestNextMessage()) {
+                    opts.onReady();
                 }
-                mode = next.mode;
-                messages.push({ type: 'user', message: { role: 'user', content: next.message } });
             }
 
             // Handle tool result
@@ -237,6 +270,12 @@ export async function claudeRemote(opts: {
             throw e;
         }
     } finally {
+        opts.signal?.removeEventListener('abort', abortNextMessage);
+        nextMessageAbortController.abort();
         updateThinking(false);
+    }
+
+    if (nextMessageError) {
+        throw nextMessageError;
     }
 }
