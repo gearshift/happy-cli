@@ -65,9 +65,25 @@ function Assert-NodeVersion {
     }
 }
 
+function Remove-GeneratedNpmLockfile {
+    $lockfile = Join-Path $InstallDir "package-lock.json"
+    if (-not (Test-Path $lockfile)) {
+        return
+    }
+
+    & git -C $InstallDir ls-files --error-unmatch package-lock.json *> $null
+    if ($LASTEXITCODE -eq 0) {
+        throw "$lockfile is tracked by git. Commit/stash local changes before upgrading."
+    }
+
+    Write-Step "Removing generated npm lockfile at $lockfile"
+    Remove-Item -Force $lockfile
+}
+
 function Update-Repo {
     if (Test-Path (Join-Path $InstallDir ".git")) {
         Write-Step "Updating existing checkout at $InstallDir"
+        Remove-GeneratedNpmLockfile
         $dirty = & git -C $InstallDir status --porcelain
         if ($dirty) {
             throw "$InstallDir has uncommitted changes. Commit/stash them or set HAPPY_CLI_DIR to a clean checkout."

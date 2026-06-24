@@ -42,9 +42,25 @@ check_node_version() {
   fi
 }
 
+remove_generated_npm_lockfile() {
+  local lockfile="$INSTALL_DIR/package-lock.json"
+
+  if [ ! -f "$lockfile" ]; then
+    return
+  fi
+
+  if git -C "$INSTALL_DIR" ls-files --error-unmatch package-lock.json >/dev/null 2>&1; then
+    fail "$INSTALL_DIR/package-lock.json is tracked by git. Commit/stash local changes before upgrading."
+  fi
+
+  log "Removing generated npm lockfile at $lockfile"
+  rm -f "$lockfile"
+}
+
 ensure_repo() {
   if [ -d "$INSTALL_DIR/.git" ]; then
     log "Updating existing checkout at $INSTALL_DIR"
+    remove_generated_npm_lockfile
     git -C "$INSTALL_DIR" diff --quiet || fail "$INSTALL_DIR has uncommitted changes. Commit/stash them or set HAPPY_CLI_DIR to a clean checkout."
     git -C "$INSTALL_DIR" fetch origin "$REF"
     git -C "$INSTALL_DIR" checkout "$REF"
