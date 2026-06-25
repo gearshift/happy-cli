@@ -31,6 +31,40 @@ import { stopCaffeinate } from "@/utils/caffeinate";
 import { connectionState } from '@/utils/serverConnectionErrors';
 import { setupOfflineReconnection } from '@/utils/setupOfflineReconnection';
 import type { ApiSessionClient } from '@/api/apiSession';
+import type { PermissionMode } from '@/api/types';
+
+type CodexApprovalPolicy = NonNullable<CodexSessionConfig['approval-policy']>;
+type CodexSandbox = NonNullable<CodexSessionConfig['sandbox']>;
+
+/**
+ * Map Happy permission modes onto Codex execution controls.
+ *
+ * Codex's deprecated `on-failure` mode still prompts for MCP tool approvals. In
+ * Happy YOLO modes that means a mandatory title-change MCP call can wedge the
+ * first turn behind an invisible approval request. Use Codex's non-interactive
+ * `never` approval policy for YOLO-style modes instead.
+ */
+export function resolveCodexExecutionConfig(permissionMode: PermissionMode): {
+    approvalPolicy: CodexApprovalPolicy;
+    sandbox: CodexSandbox;
+} {
+    switch (permissionMode) {
+        case 'read-only':
+            return { approvalPolicy: 'never', sandbox: 'read-only' };
+        case 'safe-yolo':
+            return { approvalPolicy: 'never', sandbox: 'workspace-write' };
+        case 'yolo':
+        case 'bypassPermissions':
+            return { approvalPolicy: 'never', sandbox: 'danger-full-access' };
+        case 'acceptEdits':
+            return { approvalPolicy: 'on-request', sandbox: 'workspace-write' };
+        case 'plan':
+            return { approvalPolicy: 'untrusted', sandbox: 'workspace-write' };
+        case 'default':
+        default:
+            return { approvalPolicy: 'untrusted', sandbox: 'workspace-write' };
+    }
+}
 
 type ReadyEventOptions = {
     pending: unknown;
@@ -640,35 +674,7 @@ export async function runCodex(opts: {
             currentModeHash = message.hash;
 
             try {
-                // Map permission mode to approval policy and sandbox for startSession
-                const approvalPolicy = (() => {
-                    switch (message.mode.permissionMode) {
-                        // Codex native modes
-                        case 'default': return 'untrusted' as const;                    // Ask for non-trusted commands
-                        case 'read-only': return 'never' as const;                      // Never ask, read-only enforced by sandbox
-                        case 'safe-yolo': return 'on-failure' as const;                 // Auto-run, ask only on failure
-                        case 'yolo': return 'on-failure' as const;                      // Auto-run, ask only on failure
-                        // Defensive fallback for Claude-specific modes (backward compatibility)
-                        case 'bypassPermissions': return 'on-failure' as const;         // Full access: map to yolo behavior
-                        case 'acceptEdits': return 'on-request' as const;               // Let model decide (closest to auto-approve edits)
-                        case 'plan': return 'untrusted' as const;                       // Conservative: ask for non-trusted
-                        default: return 'untrusted' as const;                           // Safe fallback
-                    }
-                })();
-                const sandbox = (() => {
-                    switch (message.mode.permissionMode) {
-                        // Codex native modes
-                        case 'default': return 'workspace-write' as const;              // Can write in workspace
-                        case 'read-only': return 'read-only' as const;                  // Read-only filesystem
-                        case 'safe-yolo': return 'workspace-write' as const;            // Can write in workspace
-                        case 'yolo': return 'danger-full-access' as const;              // Full system access
-                        // Defensive fallback for Claude-specific modes
-                        case 'bypassPermissions': return 'danger-full-access' as const; // Full access: map to yolo
-                        case 'acceptEdits': return 'workspace-write' as const;          // Can edit files in workspace
-                        case 'plan': return 'workspace-write' as const;                 // Can write for planning
-                        default: return 'workspace-write' as const;                     // Safe default
-                    }
-                })();
+                const { approvalPolicy, sandbox } = resolveCodexExecutionConfig(message.mode.permissionMode);
 
                 if (!wasCreated) {
                     const startConfig: CodexSessionConfig = {
